@@ -74,3 +74,97 @@ Connect the cluster you created to Azure Arc.
 ```
 az connectedk8s connect --resource-group $GROUP_NAME --name $CLUSTER_NAME
 ```
+Validate the connection with the following command
+```
+az connectedk8s show --resource-group $GROUP_NAME --name $CLUSTER_NAME
+```
+
+### 3. Create an Azure Container App on Azure Arc-enabled Kubernetes
+
+Set the following environment variables to the desired name of the Container Apps extension, the cluster namespace in which resources should be provisioned, and the name for the Azure Container Apps connected environment.
+```
+$EXTENSION_NAME="appenv-ext"
+$NAMESPACE="appplat-ns" 
+$CONNECTED_ENVIRONMENT_NAME="cae-azure-arc-sample-1"
+```
+Install the Container Apps extension to your Azure Arc-connected cluster.
+```
+az k8s-extension create `
+    --resource-group $GROUP_NAME `
+    --name $EXTENSION_NAME `
+    --cluster-type connectedClusters `
+    --cluster-name $CLUSTER_NAME `
+    --extension-type 'Microsoft.App.Environment' `
+    --release-train stable `
+    --auto-upgrade-minor-version true `
+    --scope cluster `
+    --release-namespace $NAMESPACE `
+    --configuration-settings "Microsoft.CustomLocation.ServiceAccount=default" `
+    --configuration-settings "appsNamespace=${NAMESPACE}" `
+    --configuration-settings "CLUSTER_NAME=${CONNECTED_ENVIRONMENT_NAME}" `
+    --configuration-settings "envoy.annotations.service.beta.kubernetes.io/azure-load-balancer-resource-group=${AKS_CLUSTER_GROUP_NAME}"
+```
+Save the id property of the Container Apps extension.
+```
+$EXTENSION_ID=$(az k8s-extension show `
+    --cluster-type connectedClusters `
+    --cluster-name $CLUSTER_NAME `
+    --resource-group $GROUP_NAME `
+    --name $EXTENSION_NAME `
+    --query id `
+    --output tsv)
+```
+Set the following environment variables to the desired name of the custom location and for the ID of the Azure Arc-connected cluster.
+```
+$CUSTOM_LOCATION_NAME="personal-vm-1" # Name of the custom location
+$CONNECTED_CLUSTER_ID=$(az connectedk8s show --resource-group $GROUP_NAME --name $CLUSTER_NAME --query id --output tsv)
+```
+Create the custom location
+```
+az customlocation create `
+    --resource-group $GROUP_NAME `
+    --name $CUSTOM_LOCATION_NAME `
+    --host-resource-id $CONNECTED_CLUSTER_ID `
+    --namespace $NAMESPACE `
+    --cluster-extension-ids $EXTENSION_ID
+```
+and validate that the custom location is successfully created with the following command.
+```
+az customlocation show --resource-group $GROUP_NAME --name $CUSTOM_LOCATION_NAME
+```
+Read the custom location ID for the next step.
+```
+$CUSTOM_LOCATION_ID=$(az customlocation show `
+    --resource-group $GROUP_NAME `
+    --name $CUSTOM_LOCATION_NAME `
+    --query id `
+    --output tsv)
+```
+Create the Container Apps connected environment.
+```
+az containerapp connected-env create `
+    --resource-group $GROUP_NAME `
+    --name $CONNECTED_ENVIRONMENT_NAME `
+    --custom-location $CUSTOM_LOCATION_ID --location=eastus
+```
+Validate that the Container Apps connected environment is successfully created with the following command. The output should show the provisioningState property as Succeeded. If not, run it again after a minute.
+```
+az containerapp connected-env show --resource-group $GROUP_NAME --name $CONNECTED_ENVIRONMENT_NAME
+```
+Retrieve connected environment ID.
+```
+$CONNECTED_ENVIRONMENT_ID = az containerapp connected-env list --custom-location $CUSTOM_LOCATION_ID -o tsv --query '[].id'
+```
+Create a sample .NET app.
+```
+az containerapp create `
+    --resource-group $GROUP_NAME `
+    --name ca-azure-arc-sample-2 `
+    --environment $CONNECTED_ENVIRONMENT_ID `
+    --environment-type connected `
+    --image mcr.microsoft.com/dotnet/samples:aspnetapp `
+    --target-port 80 `
+    --ingress 'external'
+
+az containerapp browse --resource-group $GROUP_NAME --name ca-azure-arc-sample-1
+```
