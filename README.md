@@ -59,6 +59,7 @@ az provider register --namespace Microsoft.ExtendedLocation --wait
 az provider register --namespace Microsoft.KubernetesConfiguration --wait
 az provider register --namespace Microsoft.App --wait
 az provider register --namespace Microsoft.OperationalInsights --wait
+az provider register --namespace Microsoft.Kubernetes --wait
 ```
 Set environment variables based on your Kubernetes cluster deployment.
 ```
